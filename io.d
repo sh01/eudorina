@@ -1,41 +1,38 @@
 import core.stdc.errno;
+import core.sys.posix.unistd; // close(), etc.
+import core.sys.posix.fcntl;  // O_NONBLOCK
 
+version (linux) {
+	version (Linux) {
+	} else {
+		static assert(0, "Have 'linux' but not 'Linux' version flag. If compiling with gdc, add '-fversion=Linux'.");
+	}
+} else {
+	static assert(0, "Cowardly refusing to compile linux-specific code without 'linux' version flag.");
+}
+
+import core.sys.linux.epoll;  // epoll stuff; need to compile with '-fversion=Linux' for gdc, though
+
+import std.array;
+import std.c.process;
+static import std.process;
 import std.stdint;
 import std.string;
 static import object;
 
-// Stuff derived from epoll.h
-// There is also import core.sys.linux.epoll, but we don't get the version->'Linux' declaration from gdc by default.
+// C stuff
+// unistd, missed above:
+extern (C) int pipe2(int* pipefd, int flags);
+extern (C) const char** environ;
 
-extern (C) int epoll_create(t_fd size);
-extern (C) int epoll_ctl(t_fd epfd, int op, t_fd fd, epoll_event *event);
-extern (C) int epoll_wait(int epfd, epoll_event *events, int maxevents, int timeout);
-
-immutable EPOLLIN = 0x001;
-immutable EPOLLOUT = 0x004;
-
-immutable EPOLL_CTL_ADD = 1;
-immutable EPOLL_CTL_DEL = 2;
-immutable EPOLL_CTL_MOD = 3;
 
 // Local D code.
 class IoError: object.Error {
 	this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null);
 }
 
-union epoll_data_t {
-	void	   *ptr;
-	int	   fd;
-	uint32_t   u32;
-	uint64_t   u64;
-};
-
-struct epoll_event {
-	uint32_t	events;	// Epoll events
-	epoll_data_t	data;	// User data variable
-};
-
 alias int t_fd;
+alias int t_pid;
 alias int t_ioi;
 
 alias void delegate() td_io_callback;
@@ -53,6 +50,22 @@ immutable FDF_HAVE = 1;
 immutable t_ioi IOI_READ = 1;
 immutable t_ioi IOI_WRITE = 2;
 
+class FD {
+	EventDispatcher *ed;
+	t_fd fd = -1;
+	this(EventDispatcher *ed, t_fd fd) {
+		this.ed = ed;
+		this.fd = fd;
+	}
+
+	void Close() {
+		if (!this.fd < 0) return;
+		this.ed.DelFD(this.fd);
+		close(this.fd);
+		this.fd = 2147483647;
+	}
+}
+
 class EventDispatcher {
 	t_fd fd_epoll;
 	t_fd_data[] fd_data;
@@ -61,7 +74,11 @@ class EventDispatcher {
 		this.fd_data.length = 32;
 	}
 
-	void AddFd(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+	void __ErrorHandler() {
+		throw new IoError(format("Invoked ErrorHandler()."));
+	}
+
+	void AddFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		auto tlen = this.fd_data.length;
 		if (tlen <= fd) {
 			while (tlen <= fd) tlen *= 2;
@@ -77,6 +94,17 @@ class EventDispatcher {
 		fdd.cb_write = cb_write;
 	}
 
+    void DelFD(t_fd fd) {
+		auto fdd = &this.fd_data[fd];
+		if (fdd.events) {
+			epoll_event ee;
+			epoll_ctl(this.fd_epoll, EPOLL_CTL_DEL, fd, &ee);
+		}
+		fdd.flags = 0;
+		fdd.cb_read = &this.__ErrorHandler;
+		fdd.cb_write = &this.__ErrorHandler;
+	}
+
 	void AddIntent(t_fd fd, t_ioi ioi) {
 		auto fdd = &this.fd_data[fd];
 		auto ev = fdd.events;
@@ -84,7 +112,7 @@ class EventDispatcher {
 		if (ioi & IOI_WRITE) ev |= EPOLLOUT;
 		
 		if (ev == fdd.events) return; // no-op
-	   	auto op = (fdd.events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+	   	auto op = fdd.events ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
 		fdd.events = ev;
 		epoll_event ee;
 		ee.events = ev;
@@ -131,10 +159,98 @@ class EventDispatcher {
 			}
 		}
 	}
+
+	FD WrapFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+		this.AddFD(fd, cb_read, cb_write);
+		return new FD(&this, fd);
+	}
 }
 
-class FD {
-	EventDispatcher *ed;
-	t_fd fd;
+void makePipe(t_fd *rfd, t_fd *wfd, int flags = O_NONBLOCK) {
+	int[2] pipefd;
+	if (int ret = pipe2(&pipefd[0], flags)) {
+		throw new IoError(format("pipe2() -> %d.", ret));
+	}
+	*rfd = pipefd[0];
+	*wfd = pipefd[1];
 }
 
+char*[] toStringzA(string[] data) {
+	char*[] rv = uninitializedArray!(char*[])(data.length+1);
+
+	size_t i = 0;
+	foreach (s; data) {
+		rv[i++] = cast(char*)toStringz(s);
+	}
+	rv[i] = cast(char*)0;
+	return rv;
+}
+
+class SubProcess {
+	t_pid pid = -1;
+
+    t_fd fd_i = -1, fd_o = -1, fd_e = -1;
+	void Spawn(string[]argv, const char **env = environ) {
+		if (this.pid >= 0) {
+			throw new IoError("I've already spawned.");
+		}
+
+		if (argv.length < 1) {
+			throw new IoError(format("Invalid argv %s.", argv));
+		}
+
+		t_fd fd_ic, fd_oc, fd_ec;
+
+		if (this.fd_i == -1) {
+			makePipe(&fd_ic, &this.fd_i);
+			scope(exit) close(fd_ic);
+			scope(failure) {
+				close(this.fd_i);
+				this.fd_i = -1;
+			}
+		} else { fd_ic = this.fd_i; this.fd_i = -1; };
+
+		if (this.fd_o == -1) {
+			makePipe(&this.fd_o, &fd_oc);
+			scope(exit) close(fd_oc);
+			scope(failure) {
+				close(this.fd_o);
+				this.fd_o = -1;
+			}
+		} else { fd_oc = this.fd_o; this.fd_o = -1; };
+
+		if (this.fd_e == -1) {
+			makePipe(&this.fd_e, &fd_ec);
+			scope(exit) close(fd_ec);
+			scope(failure) {
+				close(this.fd_e);
+				this.fd_e = -1;
+			}
+		} else { fd_ec = this.fd_e; this.fd_e = -1; };
+
+		t_pid pid = fork();
+		
+		if (pid == -1) {
+			// Error
+			int err = errno;
+			close(fd_ic);
+			close(fd_oc);
+			close(fd_ec);
+			if (this.fd_i >= 0) close(this.fd_i);
+			if (this.fd_o >= 0) close(this.fd_o);
+			if (this.fd_e >= 0) close(this.fd_e);
+			throw new IoError(format("fork() -> -1 (%d)", err));
+		} 
+		if (pid == 0) {
+			// Child
+			if ((dup2(0, fd_ic) == 1) || (dup2(1, fd_oc) == -1) || (dup2(2, fd_ec) == -1)) {
+				// Not likely.
+				throw new IoError("Post-fork dup2() failed.");
+			}
+			auto c_argv = toStringzA(argv);
+			execvpe(c_argv[0], c_argv.ptr, env);
+		}
+		// Parent.
+		this.pid = pid;
+	}
+}
