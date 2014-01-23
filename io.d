@@ -18,7 +18,8 @@ import std.c.process;
 static import std.process;
 import std.stdint;
 import std.string;
-static import object;
+//static import object;
+
 
 // C stuff
 // unistd, missed above:
@@ -28,7 +29,7 @@ extern (C) const char** environ;
 
 // Local D code.
 class IoError: object.Error {
-	this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null);
+	this(string msg, string file = __FILE__, size_t line = __LINE__, object.Throwable next = null);
 }
 
 alias int t_fd;
@@ -74,7 +75,7 @@ class EventDispatcher {
 		this.fd_data.length = 32;
 	}
 
-	void __ErrorHandler() {
+	void FailIO() {
 		throw new IoError(format("Invoked ErrorHandler()."));
 	}
 
@@ -101,8 +102,8 @@ class EventDispatcher {
 			epoll_ctl(this.fd_epoll, EPOLL_CTL_DEL, fd, &ee);
 		}
 		fdd.flags = 0;
-		fdd.cb_read = &this.__ErrorHandler;
-		fdd.cb_write = &this.__ErrorHandler;
+		fdd.cb_read = &this.FailIO;
+		fdd.cb_write = &this.FailIO;
 	}
 
 	void AddIntent(t_fd fd, t_ioi ioi) {
@@ -187,6 +188,7 @@ char*[] toStringzA(string[] data) {
 }
 
 class SubProcess {
+public:
 	t_pid pid = -1;
 
     t_fd fd_i = -1, fd_o = -1, fd_e = -1;
