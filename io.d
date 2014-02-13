@@ -28,10 +28,11 @@ import core.stdc.stdio;
 extern (C) int pipe2(int* pipefd, int flags);
 extern (C) const char** environ;
 
-
 // Local D code.
 class IoError: Exception {
-	this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null);
+	this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) {
+		super(msg, file, line, next);
+	};
 }
 
 alias int t_fd;
@@ -65,7 +66,7 @@ class FD {
 		if (!this.fd < 0) return;
 		this.ed.DelFD(this.fd);
 		close(this.fd);
-		this.fd = 2147483647;
+		this.fd = -1;
 	}
 }
 
