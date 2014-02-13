@@ -21,6 +21,8 @@ import std.string;
 //static import object;
 
 
+import core.stdc.stdio;
+
 // C stuff
 // unistd, missed above:
 extern (C) int pipe2(int* pipefd, int flags);
@@ -28,8 +30,8 @@ extern (C) const char** environ;
 
 
 // Local D code.
-class IoError: object.Error {
-	this(string msg, string file = __FILE__, size_t line = __LINE__, object.Throwable next = null);
+class IoError: Exception {
+	this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null);
 }
 
 alias int t_fd;
