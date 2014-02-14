@@ -17,6 +17,7 @@ import std.array;
 import std.c.process;
 static import std.process;
 import std.stdint;
+import std.stdio;
 import std.string;
 //static import object;
 
@@ -41,7 +42,7 @@ alias int t_ioi;
 
 alias void delegate() td_io_callback;
 
-class t_fd_data {
+struct t_fd_data {
 	uint32_t events = 0;
 	int flags = 0;
 	td_io_callback cb_read, cb_write;
@@ -55,11 +56,24 @@ immutable t_ioi IOI_READ = 1;
 immutable t_ioi IOI_WRITE = 2;
 
 class FD {
-	EventDispatcher *ed;
+	EventDispatcher ed;
 	t_fd fd = -1;
-	this(EventDispatcher *ed, t_fd fd) {
+
+	this(EventDispatcher ed, t_fd fd) {
 		this.ed = ed;
 		this.fd = fd;
+	}
+
+	void AddIntent(t_ioi ioi) {
+		this.ed.AddIntent(this.fd, ioi);
+	}
+
+	void DropIntent(t_ioi ioi) {
+		this.ed.DropIntent(this.fd, ioi);
+	}
+
+	void SetCallbacks(td_io_callback cb_read, td_io_callback cb_write) {
+		this.ed.SetCallbacks(this.fd, cb_read, cb_write);
 	}
 
 	void Close() {
@@ -73,6 +87,8 @@ class FD {
 class EventDispatcher {
 	t_fd fd_epoll;
 	t_fd_data[] fd_data;
+	bool shutdown = false;
+
 	this() {
 		this.fd_epoll = epoll_create(1);
 		this.fd_data.length = 32;
@@ -88,12 +104,18 @@ class EventDispatcher {
 			while (tlen <= fd) tlen *= 2;
 			this.fd_data.length = tlen;
 		};
-		auto fdd = &this.fd_data[fd];
+		t_fd_data *fdd = &this.fd_data[fd];
 		if (fdd.flags & FDF_HAVE) {
 			throw new IoError(format("Attempted to re-add fd %s.", fd));
 		}
 		fdd.events = 0;
 		fdd.flags = FDF_HAVE;
+		fdd.cb_read = cb_read;
+		fdd.cb_write = cb_write;
+	}
+
+	void SetCallbacks(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+		t_fd_data *fdd = &this.fd_data[fd];
 		fdd.cb_read = cb_read;
 		fdd.cb_write = cb_write;
 	}
@@ -146,7 +168,10 @@ class EventDispatcher {
 		int i;
 		t_fd_data fdd;
 		epoll_event* e, end;
-		while (1) {
+
+		// Also call read func on EPOLLHUP, so we can use it to detect close conditions.
+		immutable uint32_t EV_READ = EPOLLIN | EPOLLHUP;
+		while (!this.shutdown) {
 			eret = epoll_wait(this.fd_epoll, &eb_buf[0], eb_size, -1);
 			if (eret < 0) {
 				if (errno == EINTR) {
@@ -158,7 +183,7 @@ class EventDispatcher {
 			// Non-error case
 			for (e = &eb_buf[0], end = e + eret; e < end; e++) {
 				fdd = this.fd_data[e.data.fd];
-				if (e.events & EPOLLIN) fdd.cb_read();
+				if (e.events & EV_READ) fdd.cb_read();
 				if (e.events & EPOLLOUT) fdd.cb_write();
 			}
 		}
@@ -166,7 +191,7 @@ class EventDispatcher {
 
 	FD WrapFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		this.AddFD(fd, cb_read, cb_write);
-		return new FD(&this, fd);
+		return new FD(this, fd);
 	}
 }
 
@@ -204,11 +229,15 @@ public:
 			throw new IoError(format("Invalid argv %s.", argv));
 		}
 
+		int[] fds_close;
+		scope(exit) {
+			foreach (int fd; fds_close) close(fd);
+		}
 		t_fd fd_ic, fd_oc, fd_ec;
 
 		if (this.fd_i == -1) {
 			makePipe(&fd_ic, &this.fd_i);
-			scope(exit) close(fd_ic);
+			fds_close ~= fd_ic;
 			scope(failure) {
 				close(this.fd_i);
 				this.fd_i = -1;
@@ -217,7 +246,7 @@ public:
 
 		if (this.fd_o == -1) {
 			makePipe(&this.fd_o, &fd_oc);
-			scope(exit) close(fd_oc);
+			fds_close ~= fd_oc;
 			scope(failure) {
 				close(this.fd_o);
 				this.fd_o = -1;
@@ -226,7 +255,7 @@ public:
 
 		if (this.fd_e == -1) {
 			makePipe(&this.fd_e, &fd_ec);
-			scope(exit) close(fd_ec);
+			fds_close ~= fd_ec;
 			scope(failure) {
 				close(this.fd_e);
 				this.fd_e = -1;
@@ -246,9 +275,10 @@ public:
 			if (this.fd_e >= 0) close(this.fd_e);
 			throw new IoError(format("fork() -> -1 (%d)", err));
 		} 
+
 		if (pid == 0) {
 			// Child
-			if ((dup2(0, fd_ic) == 1) || (dup2(1, fd_oc) == -1) || (dup2(2, fd_ec) == -1)) {
+			if ((dup2(fd_ic, 0) == 1) || (dup2(fd_oc, 1) == -1) || (dup2(fd_ec, 2) == -1)) {
 				// Not likely.
 				throw new IoError("Post-fork dup2() failed.");
 			}
