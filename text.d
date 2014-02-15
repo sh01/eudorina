@@ -1,13 +1,14 @@
+import std.exception;
 import std.string;
 import std.uni;
 
-char[] cescape(char[] s) @safe {
+string cescape(char[] s) @trusted {
 	char rv[];
 	size_t idx = 0;
 
 	rv ~= "\"";
 
-	void add_esc(dchar c) @trusted {
+	void add_esc(dchar c) {
 		if (c <= 0x7F) {
 			rv ~= format("\\x%02x", c);
 			return;
@@ -38,5 +39,5 @@ char[] cescape(char[] s) @safe {
 		}
 	}
 	rv ~= '"';
-	return rv;
+	return assumeUnique(rv);
 }
