@@ -1,9 +1,11 @@
 import core.sys.posix.unistd;
+import std.range;
 import std.stdio;
 import std.string;
 
+import logging;
 import io;
-import std.range;
+import text;
 
 void ping(EventDispatcher ed) {
 	static string[] argv = ["ping", "-c", "8", "127.0.0.1"];
@@ -20,7 +22,7 @@ void ping(EventDispatcher ed) {
 			ed.shutdown = true;
 			return;
 		}
-		write(format("%s", buf[0..v]));
+		log(20, format("S: %s", cescape(buf[0..v])));
 	}
 	fd_o.SetCallbacks(&Print, &ed.FailIO);
 
@@ -28,8 +30,11 @@ void ping(EventDispatcher ed) {
 }
 
 int main() {
+	SetupLogging();
+	log(20, "Init.");
 	auto ed = new EventDispatcher();
 	ping(ed);
 	ed.Run();
+	log(20, "All done.");
 	return 0;
 }

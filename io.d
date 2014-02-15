@@ -19,10 +19,11 @@ static import std.process;
 import std.stdint;
 import std.stdio;
 import std.string;
-//static import object;
-
 
 import core.stdc.stdio;
+
+// Local D libs
+import logging;
 
 // C stuff
 // unistd, missed above:
@@ -45,7 +46,7 @@ alias void delegate() td_io_callback;
 struct t_fd_data {
 	uint32_t events = 0;
 	int flags = 0;
-	td_io_callback cb_read, cb_write;
+	td_io_callback cb_read, cb_write, cb_errclose;
 }
 
 // FD flag constants
@@ -112,6 +113,7 @@ class EventDispatcher {
 		fdd.flags = FDF_HAVE;
 		fdd.cb_read = cb_read;
 		fdd.cb_write = cb_write;
+		fdd.cb_errclose = &this.FailIO;
 	}
 
 	void SetCallbacks(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
@@ -129,6 +131,7 @@ class EventDispatcher {
 		fdd.flags = 0;
 		fdd.cb_read = &this.FailIO;
 		fdd.cb_write = &this.FailIO;
+		fdd.cb_errclose = &this.FailIO;
 	}
 
 	void AddIntent(t_fd fd, t_ioi ioi) {
@@ -166,11 +169,13 @@ class EventDispatcher {
 		eb_buf.length = eb_size;
 		int eret;
 		int i;
-		t_fd_data fdd;
+		t_fd_data *fdd;
 		epoll_event* e, end;
 
 		// Also call read func on EPOLLHUP, so we can use it to detect close conditions.
 		immutable uint32_t EV_READ = EPOLLIN | EPOLLHUP;
+
+		int[] fds_close;
 		while (!this.shutdown) {
 			eret = epoll_wait(this.fd_epoll, &eb_buf[0], eb_size, -1);
 			if (eret < 0) {
@@ -182,16 +187,31 @@ class EventDispatcher {
 
 			// Non-error case
 			for (e = &eb_buf[0], end = e + eret; e < end; e++) {
-				fdd = this.fd_data[e.data.fd];
-				if (e.events & EV_READ) fdd.cb_read();
-				if (e.events & EPOLLOUT) fdd.cb_write();
+				fdd = &this.fd_data[e.data.fd];
+				try {
+					if (e.events & EV_READ) fdd.cb_read();
+					if (e.events & EPOLLOUT) fdd.cb_write();
+				} catch (Exception exc) {
+					fds_close ~= e.data.fd;
+					log(40, format("IO processing error on %s: %s", *fdd, exc.line));
+				}
+			}
+			foreach (fd; fds_close) {
+				fdd = &this.fd_data[fd];
+				fdd.cb_errclose();
+				if (fdd.flags) {
+					log(50, format("cb_errclose ineffectiveness on %s.", fdd));
+					throw new IoError("Ineffective cb_errclose.");
+				}
 			}
 		}
 	}
 
 	FD WrapFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		this.AddFD(fd, cb_read, cb_write);
-		return new FD(this, fd);
+		auto rv = new FD(this, fd);
+		this.fd_data[fd].cb_errclose = &rv.Close;
+		return rv;
 	}
 }
 
