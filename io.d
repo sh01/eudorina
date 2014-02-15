@@ -24,6 +24,7 @@ import core.stdc.stdio;
 
 // Local D libs
 import logging;
+import text;
 
 // C stuff
 // unistd, missed above:
@@ -193,7 +194,7 @@ class EventDispatcher {
 					if (e.events & EPOLLOUT) fdd.cb_write();
 				} catch (Exception exc) {
 					fds_close ~= e.data.fd;
-					log(40, format("IO processing error on %s: %s", *fdd, exc.line));
+					log(40, format("IO processing error on %s: %s", *fdd, format_exc(exc)));
 				}
 			}
 			foreach (fd; fds_close) {

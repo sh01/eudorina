@@ -1,3 +1,4 @@
+import std.conv;
 import std.exception;
 import std.string;
 import std.uni;
@@ -40,4 +41,8 @@ string cescape(char[] s) @trusted {
 	}
 	rv ~= '"';
 	return assumeUnique(rv);
+}
+
+string format_exc(Throwable e) {
+	return format("[%s:%d]:%s  %s", e.file, e.line, cescape(to!(char[])(e.msg)), cescape(to!(char[])(e.info)));
 }
