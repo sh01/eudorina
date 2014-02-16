@@ -1,3 +1,5 @@
+module eudorina.io;
+
 import core.stdc.errno;
 import core.sys.posix.unistd; // close(), etc.
 import core.sys.posix.fcntl;  // O_NONBLOCK

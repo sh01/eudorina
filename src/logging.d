@@ -1,3 +1,5 @@
+module eudorina.logging;
+
 import core.sys.posix.unistd;
 
 import std.datetime;

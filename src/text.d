@@ -1,3 +1,5 @@
+module eudorina.text;
+
 import std.conv;
 import std.exception;
 import std.string;
