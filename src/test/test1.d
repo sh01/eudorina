@@ -3,9 +3,9 @@ import std.range;
 import std.stdio;
 import std.string;
 
-import logging;
-import io;
-import text;
+import eudorina.logging;
+import eudorina.io;
+import eudorina.text;
 
 void ping(EventDispatcher ed) {
 	static string[] argv = ["ping", "-c", "8", "127.0.0.1"];

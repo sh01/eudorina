@@ -25,8 +25,8 @@ import std.string;
 import core.stdc.stdio;
 
 // Local D libs
-import logging;
-import text;
+import eudorina.logging;
+import eudorina.text;
 
 // C stuff
 // unistd, missed above:

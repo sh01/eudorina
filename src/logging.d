@@ -43,7 +43,7 @@ class Logger {
 		this.log(20, format("Added LogWriter %s. Lost %d log entries before now.", w, this.lost_entries));
 	}
 
-	nothrow log(LogEntry e) @safe {
+	nothrow void log(LogEntry e) @safe {
 		auto succ = false;
 		foreach (w; this.writers) {
 			try {
@@ -58,7 +58,7 @@ class Logger {
 		}
 	}
 
-	nothrow log(int severity, string msg, long ts = TS_UNKNOWN, string file = __FILE__, size_t line = __LINE__) @safe {
+	nothrow void log(int severity, string msg, long ts = TS_UNKNOWN, string file = __FILE__, size_t line = __LINE__) @safe {
 		auto le = new LogEntry(severity, msg, ts, file, line);
 		this.log(le);
 	}
