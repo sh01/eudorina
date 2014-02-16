@@ -1,4 +1,5 @@
 import core.sys.posix.unistd;
+import std.getopt;
 import std.range;
 import std.stdio;
 import std.string;
@@ -7,7 +8,7 @@ import eudorina.logging;
 import eudorina.io;
 import eudorina.text;
 
-void ping(EventDispatcher ed) {
+void ping(EventDispatcher ed, bool iofail) {
 	static string[] argv = ["ping", "-c", "8", "127.0.0.1"];
 	auto sp = new SubProcess();
 
@@ -24,16 +25,23 @@ void ping(EventDispatcher ed) {
 		}
 		log(20, format("S: %s", cescape(buf[0..v])));
 	}
-	fd_o.SetCallbacks(&Print, &ed.FailIO);
+
+	if (!iofail) fd_o.SetCallbacks(&Print, &ed.FailIO);
 
 	fd_o.AddIntent(IOI_READ);
 }
 
-int main() {
+int main(string[] args) {
 	SetupLogging();
+	bool iofail = false;
+	getopt(
+		args,
+		"f|iofail", &iofail
+	);
+
 	log(20, "Init.");
 	auto ed = new EventDispatcher();
-	ping(ed);
+	ping(ed, iofail);
 	ed.Run();
 	log(20, "All done.");
 	return 0;
