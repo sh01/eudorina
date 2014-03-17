@@ -1,4 +1,5 @@
 import core.sys.posix.unistd;
+import core.time;
 import std.getopt;
 import std.range;
 import std.stdio;
@@ -11,9 +12,16 @@ import eudorina.text;
 void ping(EventDispatcher ed, bool iofail) {
 	static string[] argv = ["ping", "-c", "8", "127.0.0.1"];
 	auto sp = new SubProcess();
-
 	sp.Spawn(argv);
+
 	auto fd_o = ed.WrapFD(sp.fd_o, &ed.FailIO, &ed.FailIO);
+
+	auto MakePrintFixed(string s) {
+		void PrintFixed() {
+			log(20, format("Timer: %s", s));
+		}
+		return &PrintFixed;
+	}
 
 	void Print() {
 		char buf[1024];
@@ -27,8 +35,14 @@ void ping(EventDispatcher ed, bool iofail) {
 	}
 
 	if (!iofail) fd_o.SetCallbacks(&Print, &ed.FailIO);
-
 	fd_o.AddIntent(IOI_READ);
+
+	auto tss = [2000,2200,2400,3000,3200,3400];
+	foreach (i; tss) {
+		auto d = dur!"msecs"(i);
+		auto x = MakePrintFixed(format("+%d", i));
+		ed.NewTimer(x, d);
+	}
 }
 
 int main(string[] args) {

@@ -92,8 +92,6 @@ class FD {
 	}
 }
 
-enum TimerRepeat { No, Slide, Fixed};
-
 TickDuration _bumpFixedTS(TickDuration now, TickDuration delay) {
 	uint_fast64_t fac = (now.to!("nsecs", uint_fast64_t)() / delay.to!("nsecs", uint_fast64_t)());
 	return now.from!"nsecs"((fac + 1)*delay.to!("nsecs", uint_fast64_t));
@@ -101,27 +99,15 @@ TickDuration _bumpFixedTS(TickDuration now, TickDuration delay) {
 
 class Timer {
 	TickDuration fire_ts, delay;
-	TimerRepeat repeat_mode = TimerRepeat.No;
 	td_io_callback callback;
-	bool active = true;
+	bool active = true, align_, repeat;
 
-	this(EventDispatcher ed, td_io_callback cb, t_iots fire_ts) {
-		this.fire_ts = TickDuration.from!"msecs"(fire_ts);
+	this(EventDispatcher ed, td_io_callback cb, TickDuration delay, TickDuration fire_ts, bool repeat, bool align_) {
+		this.repeat = repeat;
+		this.align_ = align_;
 		this.callback = cb;
-	}
-
-	this(EventDispatcher ed, td_io_callback cb, Duration delay, TimerRepeat repeat = TimerRepeat.No) {
-		auto now = TickDuration.currSystemTick();
-
-		this.repeat_mode = repeat;
-		this.callback = cb;
-		auto td = TickDuration.from!"nsecs"(delay.total!"nsecs"());
-		this.delay = td;
-
-		if (this.repeat_mode == TimerRepeat.Slide)
-			this.fire_ts = _bumpFixedTS(now, this.delay);
-		else
-			this.fire_ts = now + td;
+		this.delay = delay;
+		this.fire_ts = fire_ts;
 	}
 
 	void stop() {
@@ -133,21 +119,15 @@ class Timer {
 	}
 
 	bool bump() {
-		if (this.repeat_mode == TimerRepeat.No) return false;
+		if (!this.repeat) return false;
 		auto now = TickDuration.currSystemTick();
-		if (this.repeat_mode == TimerRepeat.Slide) {
-			this.fire_ts = now + this.delay;
-		    return true;
-		}
-		if (this.repeat_mode == TimerRepeat.Slide) {
-			this.fire_ts = _bumpFixedTS(now, this.delay);
-			return true;
-		}
-		assert(0, "Tried to fire timer with invalid repeat mode.");
+		this.fire_ts = this.align_ ? _bumpFixedTS(now, this.delay) : now + this.delay;
+		return true;
 	}
 }
 
-alias BinaryHeap!(Timer*[], "a.fire_ts > b.fire_ts") t_timers;
+immutable string __tcmp = "a.fire_ts > b.fire_ts";
+alias BinaryHeap!(Array!(Timer), __tcmp) t_timers;
 
 class EventDispatcher {
 	t_fd fd_epoll;
@@ -313,6 +293,21 @@ class EventDispatcher {
 		this.AddFD(fd, cb_read, cb_write);
 		auto rv = new FD(this, fd);
 		this.fd_data[fd].cb_errclose = &rv.Close;
+		return rv;
+	}
+
+	void AddTimer(Timer timer) {
+		this.timers.insert(timer);
+	}
+
+	Timer NewTimer(td_io_callback cb, Duration delay, bool repeat=false, bool align_=false) {
+		auto now = TickDuration.currSystemTick();
+
+		auto td = TickDuration.from!"nsecs"(delay.total!"nsecs"());
+		auto fire_ts = align_ ? _bumpFixedTS(now, td) : now + td;
+
+		auto rv = new Timer(this, cb, td, fire_ts, repeat, align_);
+		this.AddTimer(rv);
 		return rv;
 	}
 }
