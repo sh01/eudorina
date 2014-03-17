@@ -3,6 +3,7 @@ module eudorina.io;
 import core.stdc.errno;
 import core.sys.posix.unistd; // close(), etc.
 import core.sys.posix.fcntl;  // O_NONBLOCK
+import core.time;
 
 version (linux) {
 	version (Linux) {
@@ -16,6 +17,7 @@ version (linux) {
 import core.sys.linux.epoll;  // epoll stuff; need to compile with '-fversion=Linux' for gdc, though
 
 import std.array;
+import std.container;
 import std.c.process;
 static import std.process;
 import std.stdint;
@@ -43,6 +45,8 @@ class IoError: Exception {
 alias int t_fd;
 alias int t_pid;
 alias int t_ioi;
+
+alias int_fast64_t t_iots; //Time duration in millseconds
 
 alias void delegate() td_io_callback;
 
@@ -88,9 +92,67 @@ class FD {
 	}
 }
 
+enum TimerRepeat { No, Slide, Fixed};
+
+TickDuration _bumpFixedTS(TickDuration now, TickDuration delay) {
+	uint_fast64_t fac = (now.to!("nsecs", uint_fast64_t)() / delay.to!("nsecs", uint_fast64_t)());
+	return now.from!"nsecs"((fac + 1)*delay.to!("nsecs", uint_fast64_t));
+}
+
+class Timer {
+	TickDuration fire_ts, delay;
+	TimerRepeat repeat_mode = TimerRepeat.No;
+	td_io_callback callback;
+	bool active = true;
+
+	this(EventDispatcher ed, td_io_callback cb, t_iots fire_ts) {
+		this.fire_ts = TickDuration.from!"msecs"(fire_ts);
+		this.callback = cb;
+	}
+
+	this(EventDispatcher ed, td_io_callback cb, Duration delay, TimerRepeat repeat = TimerRepeat.No) {
+		auto now = TickDuration.currSystemTick();
+
+		this.repeat_mode = repeat;
+		this.callback = cb;
+		auto td = TickDuration.from!"nsecs"(delay.total!"nsecs"());
+		this.delay = td;
+
+		if (this.repeat_mode == TimerRepeat.Slide)
+			this.fire_ts = _bumpFixedTS(now, this.delay);
+		else
+			this.fire_ts = now + td;
+	}
+
+	void stop() {
+		this.active = false;
+	}
+
+	void fire() {
+		this.callback();
+	}
+
+	bool bump() {
+		if (this.repeat_mode == TimerRepeat.No) return false;
+		auto now = TickDuration.currSystemTick();
+		if (this.repeat_mode == TimerRepeat.Slide) {
+			this.fire_ts = now + this.delay;
+		    return true;
+		}
+		if (this.repeat_mode == TimerRepeat.Slide) {
+			this.fire_ts = _bumpFixedTS(now, this.delay);
+			return true;
+		}
+		assert(0, "Tried to fire timer with invalid repeat mode.");
+	}
+}
+
+alias BinaryHeap!(Timer*[], "a.fire_ts > b.fire_ts") t_timers;
+
 class EventDispatcher {
 	t_fd fd_epoll;
 	t_fd_data[] fd_data;
+	t_timers timers;
 	bool shutdown = false;
 
 	this() {
@@ -174,13 +236,29 @@ class EventDispatcher {
 		int i;
 		t_fd_data *fdd;
 		epoll_event* e, end;
+		int timeout;
+		TickDuration now;
 
 		// Also call read func on EPOLLHUP, so we can use it to detect close conditions.
 		immutable uint32_t EV_READ = EPOLLIN | EPOLLHUP;
 
 		int[] fds_close;
 		while (!this.shutdown) {
-			eret = epoll_wait(this.fd_epoll, &eb_buf[0], eb_size, -1);
+			if (this.timers.empty()) {
+				timeout = -1;
+			} else {
+				now = TickDuration.currSystemTick();
+				uint_fast64_t delay = (this.timers.front().fire_ts - now).to!("msecs", uint_fast64_t)();
+				if (delay <= 0) {
+					timeout = 0;
+				} else if (delay > int.max) {
+					timeout = int.max;
+				} else {
+					timeout = cast(int)delay;
+				}
+			}
+
+			eret = epoll_wait(this.fd_epoll, &eb_buf[0], eb_size, timeout);
 			if (eret < 0) {
 				if (errno == EINTR) {
 					continue;
@@ -205,6 +283,27 @@ class EventDispatcher {
 				if (fdd.flags) {
 					log(50, format("cb_errclose ineffectiveness on %s.", fdd));
 					throw new IoError("Ineffective cb_errclose.");
+				}
+			}
+			// Timer processing
+			now = TickDuration.currSystemTick();
+			while (!this.timers.empty()) {
+				auto t = this.timers.front();
+				// We could update now() here and check again if the first one fails; but mostly that would just decrease efficiency with unnecessary added syscalls.
+				// If we're so starved that one more FD poll iteration will make us fall behind, things have gone to hell already.
+				if (t.fire_ts > now) break;
+
+				this.timers.removeFront();
+				if (!t.active) continue;
+
+				bool repeat = false;
+				try {
+					t.fire();
+				} catch (Exception exc) {
+					log(40, format("Timer fire error: %s; force stopping.", format_exc(exc)));
+				}
+				if (t.bump()) {
+					this.timers.insert(t);
 				}
 			}
 		}
