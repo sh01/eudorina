@@ -80,12 +80,13 @@ class FD {
 		this.ed.DropIntent(this.fd, ioi);
 	}
 
-	void SetCallbacks(td_io_callback cb_read, td_io_callback cb_write) {
-		this.ed.SetCallbacks(this.fd, cb_read, cb_write);
+	void setCallbacks(td_io_callback cb_read, td_io_callback cb_write) {
+		this.ed.setCallbacks(this.fd, cb_read, cb_write);
 	}
 
 	void Close() {
-		if (!this.fd < 0) return;
+		if (this.fd < 0) return;
+		log(20, format("FD(%d).Close", this.fd));
 		this.ed.DelFD(this.fd);
 		close(this.fd);
 		this.fd = -1;
@@ -129,6 +130,7 @@ class Timer {
 immutable string __tcmp = "a.fire_ts > b.fire_ts";
 alias BinaryHeap!(Array!(Timer), __tcmp) t_timers;
 
+
 class EventDispatcher {
 	t_fd fd_epoll;
 	t_fd_data[] fd_data;
@@ -161,7 +163,7 @@ class EventDispatcher {
 		fdd.cb_errclose = &this.FailIO;
 	}
 
-	void SetCallbacks(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+	void setCallbacks(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		t_fd_data *fdd = &this.fd_data[fd];
 		fdd.cb_read = cb_read;
 		fdd.cb_write = cb_write;
@@ -186,7 +188,7 @@ class EventDispatcher {
 		if (ioi & IOI_WRITE) ev |= EPOLLOUT;
 		
 		if (ev == fdd.events) return; // no-op
-	   	auto op = fdd.events ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
+		auto op = fdd.events ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
 		fdd.events = ev;
 		epoll_event ee;
 		ee.events = ev;
@@ -252,7 +254,7 @@ class EventDispatcher {
 			}
 
 			// Non-error case
-			for (e = &eb_buf[0], end = e + eret; e < end; e++) {
+			for (e = eb_buf.ptr, end = e + eret; e < end; e++) {
 				fdd = &this.fd_data[e.data.fd];
 				try {
 					if (e.events & EV_READ) fdd.cb_read();
@@ -317,7 +319,63 @@ class EventDispatcher {
 	}
 }
 
-void makePipe(t_fd *rfd, t_fd *wfd, int flags = O_NONBLOCK) {
+class BufferWriter {
+private:
+	FD fd;
+	auto bufs = DList!(char[])();
+public:
+	this(FD fd) {
+		this.fd = fd;
+	}
+	this (EventDispatcher ed, t_fd fd, td_io_callback cb_read = null) {
+		if (cb_read == null) cb_read = &ed.FailIO;
+		this.fd = ed.WrapFD(fd, cb_read, &this.handleWritability);
+	}
+
+	// Attempt to push buffered data out through FD.
+	void push() {
+		while (!this.bufs.empty()) {
+			auto buf = this.bufs.front();
+			ssize_t count = core.sys.posix.unistd.write(this.fd.fd, buf.ptr, buf.length);
+			if (count == -1) {
+				// Didn't write anything. Check if this was just a nonblocking can't-write return:
+				// D is very silly here, refusing switch cases with duplicated aliased match-values, so we can't just throw EAGAIN and EWOULDBLOCK in one. We should look into its compile-time execution features instead.
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+					break;
+				}
+				throw new IoError(format("BufferWriter(%d)::push() -> %d", this.fd.fd, errno));
+			}
+			// Otherwise, don't read from exactly the same buffer again.
+			this.bufs.removeFront();
+			if (buf.length < count) {
+				// Partial write. Resize buffer we read from, reinsert it, and break.
+				this.bufs.insertFront(buf[count..buf.length]);
+				break;
+			}
+			// Full write; continue with next element.
+		}
+	}
+
+	void handleWritability() {
+		this.push();
+		if (this.bufs.empty()) {
+			// Out of stuff to write for now; record this so we don't immediately get called again.
+			this.fd.DropIntent(IOI_WRITE);
+		}
+	}
+
+	void write(char[] buf) {
+		bool was_empty = this.bufs.empty();
+		this.bufs.insertBack(buf);
+		if (was_empty) {
+			// Try to write it immediately; there might be enough space in the kernel buffer for it to suceed, and if so we don't need to do the FD EPOLLOUT register/unregister dance.
+			this.push();
+			if (!this.bufs.empty()) this.fd.AddIntent(IOI_WRITE);
+		}
+	}
+}
+
+void makePipe(t_fd *rfd, t_fd *wfd, int flags = 0) {
 	int[2] pipefd;
 	if (int ret = pipe2(&pipefd[0], flags)) {
 		throw new IoError(format("pipe2() -> %d.", ret));
@@ -341,7 +399,7 @@ class SubProcess {
 public:
 	t_pid pid = -1;
 
-    t_fd fd_i = -1, fd_o = -1, fd_e = -1;
+	t_fd fd_i = -1, fd_o = -1, fd_e = -1;
 	void Spawn(string[]argv, const char **env = environ) {
 		if (this.pid >= 0) {
 			throw new IoError("I've already spawned.");
@@ -359,6 +417,7 @@ public:
 
 		if (this.fd_i == -1) {
 			makePipe(&fd_ic, &this.fd_i);
+			fcntl(this.fd_i, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_ic;
 			scope(failure) {
 				close(this.fd_i);
@@ -368,6 +427,7 @@ public:
 
 		if (this.fd_o == -1) {
 			makePipe(&this.fd_o, &fd_oc);
+			fcntl(this.fd_o, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_oc;
 			scope(failure) {
 				close(this.fd_o);
@@ -377,6 +437,7 @@ public:
 
 		if (this.fd_e == -1) {
 			makePipe(&this.fd_e, &fd_ec);
+			fcntl(this.fd_e, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_ec;
 			scope(failure) {
 				close(this.fd_e);

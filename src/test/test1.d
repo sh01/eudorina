@@ -34,7 +34,7 @@ void ping(EventDispatcher ed, bool iofail) {
 		log(20, format("S: %s", cescape(buf[0..v])));
 	}
 
-	if (!iofail) fd_o.SetCallbacks(&Print, &ed.FailIO);
+	if (!iofail) fd_o.setCallbacks(&Print, &ed.FailIO);
 	fd_o.AddIntent(IOI_READ);
 
 	auto tss = [2000,2200,2400,3000,3200,3400];
