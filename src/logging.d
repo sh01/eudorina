@@ -79,9 +79,13 @@ class TextFDWriter : LogWriter {
 	}
 
 	string _format(LogEntry e) @trusted {
+		// SysTime does a /etc/localtime stat for any access to its .year .second .fracSec etc. members.
+		// To reduce the number of syscalls for a log message, instead of using those members we convert it to a TM here and rip its fractional seconds out separetly.
 		auto st = new SysTime(e.ts);
+		auto tm = st.toTM();
+		auto hnusec = (st.stdTime()/1000) % 10000;
 		return format("%04d-%02d-%02d_%02d:%02d:%02d.%04d %02d [%s:%s] %s\n",
-		  st.year, st.month, st.day, st.hour, st.minute, st.second, st.fracSec.msecs,
+		  tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, hnusec,
 		  e.severity, e.file, e.line, e.msg);
 	}
 
