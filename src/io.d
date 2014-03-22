@@ -228,7 +228,12 @@ class EventDispatcher {
 				timeout = -1;
 			} else {
 				now = TickDuration.currSystemTick();
-				uint_fast64_t delay = (this.timers.front().fire_ts - now).to!("msecs", uint_fast64_t)();
+				// This is inelegant, but ...
+				// We can only specify a whole number of msecs as a timeout to epoll_wait().
+				// Rounding the delay down is likely to result in several poll-only loops, where we specify a timeout of 0,
+				// until the remaining fractional millisecond has passed and we can fire the timer.
+				// So we add one to the timeout instead to avoid those no-event loop iterations.
+				uint_fast64_t delay = (this.timers.front().fire_ts - now).to!("msecs", uint_fast64_t)() + 1;
 				if (delay <= 0) {
 					timeout = 0;
 				} else if (delay > int.max) {
