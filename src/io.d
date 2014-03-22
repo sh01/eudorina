@@ -63,6 +63,13 @@ immutable FDF_HAVE = 1;
 immutable t_ioi IOI_READ = 1;
 immutable t_ioi IOI_WRITE = 2;
 
+private td_io_callback makeFail() {
+	void FailIO() {
+		throw new IoError(format("Invoked ErrorHandler()."));
+	}
+	return &FailIO;
+}
+
 class FD {
 	EventDispatcher ed;
 	t_fd fd = -1;
@@ -80,8 +87,8 @@ class FD {
 		this.ed.DropIntent(this.fd, ioi);
 	}
 
-	void setCallbacks(td_io_callback cb_read, td_io_callback cb_write) {
-		this.ed.setCallbacks(this.fd, cb_read, cb_write);
+	void setCallbacks(td_io_callback read = makeFail(), td_io_callback write = makeFail()) {
+		this.ed.setCallbacks(this.fd, read, write);
 	}
 
 	void Close() {
@@ -127,9 +134,8 @@ class Timer {
 	}
 }
 
-immutable string __tcmp = "a.fire_ts > b.fire_ts";
-alias BinaryHeap!(Array!(Timer), __tcmp) t_timers;
-
+private immutable string __tcmp = "a.fire_ts > b.fire_ts";
+private alias BinaryHeap!(Array!(Timer), __tcmp) t_timers;
 
 class EventDispatcher {
 	t_fd fd_epoll;
@@ -296,7 +302,7 @@ class EventDispatcher {
 		}
 	}
 
-	FD WrapFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+	FD WrapFD(t_fd fd, td_io_callback cb_read = makeFail(), td_io_callback cb_write = makeFail()) {
 		this.AddFD(fd, cb_read, cb_write);
 		auto rv = new FD(this, fd);
 		this.fd_data[fd].cb_errclose = &rv.Close;
