@@ -274,7 +274,7 @@ class EventDispatcher {
 			now = TickDuration.currSystemTick();
 			while (!this.timers.empty()) {
 				auto t = this.timers.front();
-				// We could update now() here and check again if the first one fails; but mostly that would just decrease efficiency with unnecessary added syscalls.
+				// We could update now() here and check again if the first one fails; but mostly that would just decrease efficiency.
 				// If we're so starved that one more FD poll iteration will make us fall behind, things have gone to hell already.
 				if (t.fire_ts > now) break;
 
