@@ -3,6 +3,7 @@ module eudorina.io;
 import core.stdc.errno;
 import core.sys.posix.unistd; // close(), etc.
 import core.sys.posix.fcntl;  // O_NONBLOCK
+import core.sys.posix.stdlib; // pty stuff: posix_openpt, ptsname(), etc.
 import core.time;
 
 version (linux) {
@@ -87,7 +88,7 @@ class FD {
 		this.ed.DropIntent(this.fd, ioi);
 	}
 
-	void setCallbacks(td_io_callback read = makeFail(), td_io_callback write = makeFail()) {
+	void setCallbacks(td_io_callback read = null, td_io_callback write = null) {
 		this.ed.setCallbacks(this.fd, read, write);
 	}
 
@@ -154,6 +155,10 @@ class EventDispatcher {
 
 	void AddFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		auto tlen = this.fd_data.length;
+		if (fd < 0) {
+			throw new IoError(format("Attempted to add negative fd %d.", fd));
+		}
+
 		if (tlen <= fd) {
 			while (tlen <= fd) tlen *= 2;
 			this.fd_data.length = tlen;
@@ -169,10 +174,11 @@ class EventDispatcher {
 		fdd.cb_errclose = &this.FailIO;
 	}
 
-	void setCallbacks(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
+	void setCallbacks(t_fd fd, td_io_callback cb_read = null, td_io_callback cb_write = null) {
 		t_fd_data *fdd = &this.fd_data[fd];
-		fdd.cb_read = cb_read;
-		fdd.cb_write = cb_write;
+
+		if (cb_read != null) fdd.cb_read = cb_read;
+		if (cb_write != null) fdd.cb_write = cb_write;
 	}
 
     void DelFD(t_fd fd) {
@@ -333,7 +339,7 @@ public:
 	this(FD fd) {
 		this.fd = fd;
 	}
-	this (EventDispatcher ed, t_fd fd, td_io_callback cb_read = null) {
+	this (EventDispatcher ed, t_fd fd, td_io_callback cb_read = makeFail()) {
 		if (cb_read == null) cb_read = &ed.FailIO;
 		this.fd = ed.WrapFD(fd, cb_read, &this.handleWritability);
 	}
@@ -401,15 +407,25 @@ char*[] toStringzA(string[] data) {
 	return rv;
 }
 
+private void checkErr(bool err, string msg,) {
+	if (!err) return;
+	throw new IoError(format(msg, errno));
+}
+
 class SubProcess {
 public:
 	t_pid pid = -1;
 
 	t_fd fd_i = -1, fd_o = -1, fd_e = -1;
-	void Spawn(string[]argv, const char **env = environ) {
+
+	private void checkUnspawned() {
 		if (this.pid >= 0) {
 			throw new IoError("I've already spawned.");
 		}
+	}
+
+	void Spawn(string[]argv, const char **env = environ) {
+		this.checkUnspawned();
 
 		if (argv.length < 1) {
 			throw new IoError(format("Invalid argv %s.", argv));
@@ -476,5 +492,27 @@ public:
 		}
 		// Parent.
 		this.pid = pid;
+	}
+
+	// Create a new master/slave pty pair, setting the slave side up for the subprocess's stdout and stdin.
+	//  Returns the fd for the (new) master side on success.
+	//  Else throws IoError.
+	t_fd setupPty() {
+		this.checkUnspawned();
+		if ((this.fd_i != -1) || (this.fd_o != -1)) {
+			throw new IoError("Target FDs are not free.");
+		}
+		t_fd fd_master = posix_openpt(O_RDWR|O_NOCTTY);
+		checkErr(fd_master < 0, "PTY master open failed: %d");
+		checkErr(grantpt(fd_master) != 0, "grantpt() failed: %d");
+		checkErr(unlockpt(fd_master) != 0, "unlockpt() failed:%d");
+		// Not threadsafe. I think we'll live.
+		char *slave_fn = ptsname(fd_master);
+		checkErr(slave_fn == null, "ptsname() failed: %d");
+		t_fd fd_slave = open(slave_fn, O_RDWR);
+		checkErr(fd_slave < 0, "PTY slave open failed: %d");
+		this.fd_i = fd_slave;
+		this.fd_o = fd_slave;
+		return fd_master;
 	}
 }
