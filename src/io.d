@@ -156,6 +156,7 @@ class EventDispatcher {
 	void AddFD(t_fd fd, td_io_callback cb_read, td_io_callback cb_write) {
 		auto tlen = this.fd_data.length;
 		if (fd < 0) {
+			core.stdc.stdlib.abort();
 			throw new IoError(format("Attempted to add negative fd %d.", fd));
 		}
 
@@ -333,9 +334,9 @@ class EventDispatcher {
 
 class BufferWriter {
 private:
-	FD fd;
 	auto bufs = DList!(char[])();
 public:
+	FD fd;
 	this(FD fd) {
 		this.fd = fd;
 	}
@@ -479,7 +480,7 @@ public:
 			if (this.fd_o >= 0) close(this.fd_o);
 			if (this.fd_e >= 0) close(this.fd_e);
 			throw new IoError(format("fork() -> -1 (%d)", err));
-		} 
+		}
 
 		if (pid == 0) {
 			// Child
@@ -487,6 +488,7 @@ public:
 				// Not likely.
 				throw new IoError("Post-fork dup2() failed.");
 			}
+
 			auto c_argv = toStringzA(argv);
 			execvpe(c_argv[0], c_argv.ptr, env);
 		}
@@ -497,12 +499,12 @@ public:
 	// Create a new master/slave pty pair, setting the slave side up for the subprocess's stdout and stdin.
 	//  Returns the fd for the (new) master side on success.
 	//  Else throws IoError.
-	t_fd setupPty() {
+	t_fd setupPty(int flags = O_NOCTTY) {
 		this.checkUnspawned();
 		if ((this.fd_i != -1) || (this.fd_o != -1)) {
 			throw new IoError("Target FDs are not free.");
 		}
-		t_fd fd_master = posix_openpt(O_RDWR|O_NOCTTY);
+		t_fd fd_master = posix_openpt(O_RDWR|flags);
 		checkErr(fd_master < 0, "PTY master open failed: %d");
 		checkErr(grantpt(fd_master) != 0, "grantpt() failed: %d");
 		checkErr(unlockpt(fd_master) != 0, "unlockpt() failed:%d");
