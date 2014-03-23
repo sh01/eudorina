@@ -33,7 +33,7 @@ import eudorina.text;
 // C stuff
 // unistd, missed above:
 extern (C) int pipe2(int* pipefd, int flags);
-extern (C) const char** environ;
+private extern (C) extern const char** environ;
 
 // Local D code.
 class IoError: Exception {
