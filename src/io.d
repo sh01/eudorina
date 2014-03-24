@@ -418,6 +418,7 @@ public:
 	t_pid pid = -1;
 
 	t_fd fd_i = -1, fd_o = -1, fd_e = -1;
+	t_fd[] fds_close;
 
 	private void checkUnspawned() {
 		if (this.pid >= 0) {
@@ -435,6 +436,8 @@ public:
 		int[] fds_close;
 		scope(exit) {
 			foreach (int fd; fds_close) close(fd);
+			foreach (int fd; this.fds_close) close(fd);
+			this.fds_close.length = 0;
 		}
 		t_fd fd_ic, fd_oc, fd_ec;
 
@@ -506,6 +509,9 @@ public:
 		}
 		t_fd fd_master = posix_openpt(O_RDWR|flags);
 		checkErr(fd_master < 0, "PTY master open failed: %d");
+		scope (failure) {
+			close(fd_master);
+		}
 		checkErr(grantpt(fd_master) != 0, "grantpt() failed: %d");
 		checkErr(unlockpt(fd_master) != 0, "unlockpt() failed:%d");
 		// Not threadsafe. I think we'll live.
@@ -513,8 +519,12 @@ public:
 		checkErr(slave_fn == null, "ptsname() failed: %d");
 		t_fd fd_slave = open(slave_fn, O_RDWR);
 		checkErr(fd_slave < 0, "PTY slave open failed: %d");
+		scope (failure) {
+			close(fd_slave);
+		}
 		this.fd_i = fd_slave;
 		this.fd_o = fd_slave;
+		this.fds_close ~= fd_slave;
 		return fd_master;
 	}
 }
