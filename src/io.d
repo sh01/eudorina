@@ -445,30 +445,18 @@ public:
 			makePipe(&fd_ic, &this.fd_i);
 			fcntl(this.fd_i, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_ic;
-			scope(failure) {
-				close(this.fd_i);
-				this.fd_i = -1;
-			}
 		} else { fd_ic = this.fd_i; this.fd_i = -1; };
 
 		if (this.fd_o == -1) {
 			makePipe(&this.fd_o, &fd_oc);
 			fcntl(this.fd_o, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_oc;
-			scope(failure) {
-				close(this.fd_o);
-				this.fd_o = -1;
-			}
 		} else { fd_oc = this.fd_o; this.fd_o = -1; };
 
 		if (this.fd_e == -1) {
 			makePipe(&this.fd_e, &fd_ec);
 			fcntl(this.fd_e, F_SETFL, O_NONBLOCK);
 			fds_close ~= fd_ec;
-			scope(failure) {
-				close(this.fd_e);
-				this.fd_e = -1;
-			}
 		} else { fd_ec = this.fd_e; this.fd_e = -1; };
 
 		t_pid pid = fork();
@@ -479,9 +467,18 @@ public:
 			close(fd_ic);
 			close(fd_oc);
 			close(fd_ec);
-			if (this.fd_i >= 0) close(this.fd_i);
-			if (this.fd_o >= 0) close(this.fd_o);
-			if (this.fd_e >= 0) close(this.fd_e);
+			if (this.fd_i >= 0) {
+				close(this.fd_i);
+				this.fd_i = -1;
+			}
+			if (this.fd_o >= 0) {
+				close(this.fd_o);
+				this.fd_o = -1;
+			}
+			if (this.fd_e >= 0) {
+				close(this.fd_e);
+				this.fd_e = -1;
+			}
 			throw new IoError(format("fork() -> -1 (%d)", err));
 		}
 
