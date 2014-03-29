@@ -64,9 +64,9 @@ class Logger {
 	}
 }
 
-Logger stdLogger;
+__gshared Logger stdLogger;
 
-void log(Severity severity, string msg, long ts = TS_UNKNOWN, string file = __FILE__, size_t line = __LINE__) @safe {
+void log(Severity severity, string msg, long ts = TS_UNKNOWN, string file = __FILE__, size_t line = __LINE__) @trusted {
 	stdLogger.log(severity, msg, ts, file, line);
 }
 
@@ -79,7 +79,7 @@ class TextFDWriter : LogWriter {
 		this.fd = fd;
 		this.min_severity = min_s;
 		if (tz == null) {
-			immutable(TimeZone) tz_ = null;
+			immutable(TimeZone) tz_ = LocalTime();
 			tz = &tz_;
 		}
 		this.tz = tz;
@@ -88,7 +88,8 @@ class TextFDWriter : LogWriter {
 	string _format(LogEntry e) @trusted {
 		// SysTime does a /etc/localtime stat for any access to its .year .second .fracSec etc. members.
 		// To reduce the number of syscalls for a log message, instead of using those members we convert it to a TM here and rip its fractional seconds out separetly.
-		auto st = new SysTime(e.ts, *this.tz);
+		// auto st = new SysTime(e.ts, *this.tz); -- doesn't work. Why?
+		auto st = new SysTime(e.ts);
 		auto tm = st.toTM();
 		auto hnusec = (st.stdTime()/1000) % 10000;
 		return format("%04d-%02d-%02d_%02d:%02d:%02d.%04d %02d [%s:%s] %s\n",
