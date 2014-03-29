@@ -185,7 +185,7 @@ public:
 		if (cb_write != null) fdd.cb_write = cb_write;
 	}
 
-    void DelFD(t_fd fd) {
+	void DelFD(t_fd fd) {
 		auto fdd = &this.fd_data[fd];
 		if (fdd.events) {
 			epoll_event ee;
