@@ -41,7 +41,7 @@ private:
 public:
 	SyncRunner sr;
 	shared sigset_t set;
-	Thread *catch_thread = null;
+	Thread catch_thread;
 
 	this(SyncRunner sr) {
 		if (pthread_mutex_init(&this.mut, null) != 0) {
@@ -74,24 +74,23 @@ public:
 	}
 
 	void setDefaultHandlers() {
-		foreach (i; [SIGHUP, SIGUSR1, SIGUSR2]) {
+		foreach (i; [SIGHUP]) {
 			this.setHandler(i, &this._log);
 		}
 	}
 
 	void start() {
-		if (this.catch_thread != null) {
+		if (this.catch_thread !is null) {
 			throw new SignalError("I've already been started.");
 		}
 		auto rc = pthread_sigmask(SIG_BLOCK, cast(sigset_t*)&this.set, null);
 		if (rc != 0) {
 			throw new SignalError(format("pthread_sigmask() -> errno == %d", errno));
 		}
-		auto thread = new Thread(&this._catchForever);
-		this.catch_thread = &thread;
-		thread.name("signal_catcher");
-		thread.isDaemon(true);
-		this.catch_thread.start();
+		this.catch_thread = new Thread(&this._catchForever);
+		catch_thread.name("signal_catcher");
+		catch_thread.isDaemon(true);
+		catch_thread.start();
 	}
 
 	void _runHandlers() {

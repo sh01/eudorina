@@ -43,6 +43,7 @@ void ping(ServiceAggregate sa, bool iofail) {
 		if (v == 0) {
 			fd_o.close();
 			killself(SIGTERM);
+			//sa.ed.shutdown = 1;
 			return;
 		}
 		log(20, format("S: %s", cescape(buf[0..v])));
@@ -70,11 +71,10 @@ int main(string[] args) {
 	log(20, "Init.");
 	auto sa = new ServiceAggregate();
 	sa.setupDefaults();
-	killself(SIGUSR1);
+	killself(SIGHUP);
 
 	ping(sa, iofail);
 	sa.ed.Run();
 	log(20, "All done.");
-	exit(0);
 	return 0;
 }
