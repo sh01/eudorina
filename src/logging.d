@@ -73,15 +73,22 @@ void log(Severity severity, string msg, long ts = TS_UNKNOWN, string file = __FI
 class TextFDWriter : LogWriter {
 	int fd;
 	Severity min_severity;
-	this(Severity min_s, int fd) {
+	immutable(TimeZone) *tz;
+
+	this(Severity min_s, int fd, immutable(TimeZone) *tz = null) {
 		this.fd = fd;
 		this.min_severity = min_s;
+		if (tz == null) {
+			immutable(TimeZone) tz_ = null;
+			tz = &tz_;
+		}
+		this.tz = tz;
 	}
 
 	string _format(LogEntry e) @trusted {
 		// SysTime does a /etc/localtime stat for any access to its .year .second .fracSec etc. members.
 		// To reduce the number of syscalls for a log message, instead of using those members we convert it to a TM here and rip its fractional seconds out separetly.
-		auto st = new SysTime(e.ts);
+		auto st = new SysTime(e.ts, *this.tz);
 		auto tm = st.toTM();
 		auto hnusec = (st.stdTime()/1000) % 10000;
 		return format("%04d-%02d-%02d_%02d:%02d:%02d.%04d %02d [%s:%s] %s\n",
