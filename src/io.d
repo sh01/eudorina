@@ -3,6 +3,7 @@ module eudorina.io;
 import core.stdc.errno;
 import core.sys.posix.unistd; // close(), etc.
 import core.sys.posix.fcntl;  // O_NONBLOCK
+import core.sys.posix.pthread;
 import core.sys.posix.stdlib; // pty stuff: posix_openpt, ptsname(), etc.
 import core.time;
 
@@ -22,7 +23,6 @@ import std.container;
 import std.c.process;
 static import std.process;
 import std.stdint;
-import std.stdio;
 import std.string;
 
 import core.stdc.stdio;
@@ -43,6 +43,7 @@ class IoError: Exception {
 	};
 }
 
+alias close close_;
 alias int t_fd;
 alias int t_pid;
 alias int t_ioi;
@@ -92,11 +93,11 @@ class FD {
 		this.ed.setCallbacks(this.fd, read, write);
 	}
 
-	void Close() {
+	void close() {
 		if (this.fd < 0) return;
-		log(20, format("FD(%d).Close", this.fd));
+		log(20, format("FD(%d).close()", this.fd));
 		this.ed.DelFD(this.fd);
-		close(this.fd);
+		close_(this.fd);
 		this.fd = -1;
 	}
 }
@@ -139,9 +140,11 @@ private immutable string __tcmp = "a.fire_ts > b.fire_ts";
 private alias BinaryHeap!(Array!(Timer), __tcmp) t_timers;
 
 class EventDispatcher {
+private:
 	t_fd fd_epoll;
 	t_fd_data[] fd_data;
 	t_timers timers;
+public:
 	bool shutdown = false;
 
 	this() {
@@ -312,7 +315,7 @@ class EventDispatcher {
 	FD WrapFD(t_fd fd, td_io_callback cb_read = makeFail(), td_io_callback cb_write = makeFail()) {
 		this.AddFD(fd, cb_read, cb_write);
 		auto rv = new FD(this, fd);
-		this.fd_data[fd].cb_errclose = &rv.Close;
+		this.fd_data[fd].cb_errclose = &rv.close;
 		return rv;
 	}
 
@@ -331,6 +334,66 @@ class EventDispatcher {
 		return rv;
 	}
 }
+
+
+void makePipe(t_fd *rfd, t_fd *wfd, int flags = 0) {
+	int[2] pipefd;
+	if (int ret = pipe2(&pipefd[0], flags)) {
+		throw new IoError(format("pipe2() -> %d.", ret));
+	}
+	*rfd = pipefd[0];
+	*wfd = pipefd[1];
+}
+
+class SyncRunner {
+private:
+	t_fd fdw;
+	FD fdr;
+	DList!td_io_callback cbs;
+	char[] buf;
+	pthread_mutex_t mut;
+	
+public:
+	this(EventDispatcher ed) {
+		if (pthread_mutex_init(&this.mut, null) != 0) {
+			throw new IoError(format("pthread_mutex_init() -> errno == %d", errno));
+		};
+		this.buf.length = 65536;
+		t_fd fdr;
+		makePipe(&fdr, &this.fdw, O_NONBLOCK);
+		this.fdr = ed.WrapFD(fdr, &this._handleEvents);
+		this.fdr.AddIntent(IOI_READ);
+	}
+	~this() {
+		this.fdr.close();
+		this.fdr = null;
+		close(this.fdw);
+	}
+	void _handleEvents() {
+		read(this.fdr.fd, this.buf.ptr, this.buf.length);
+		log(20, "DO2");
+
+		DList!td_io_callback cbs;
+		{
+			pthread_mutex_lock(&this.mut);
+			scope(exit) pthread_mutex_unlock(&this.mut);
+			cbs = this.cbs;
+			this.cbs = DList!td_io_callback();
+		}
+		foreach (cb; cbs) cb();
+	}
+	void add(td_io_callback cb) {
+		log(20, "DO0");
+		{
+			pthread_mutex_lock(&this.mut);
+			scope(exit) pthread_mutex_unlock(&this.mut);
+			this.cbs.insertBack(cb);
+		}
+		write(this.fdw, "\x00".ptr, 1);
+		log(20, "DO1");
+	}
+}
+
 
 class BufferWriter {
 private:
@@ -386,15 +449,6 @@ public:
 			if (!this.bufs.empty()) this.fd.AddIntent(IOI_WRITE);
 		}
 	}
-}
-
-void makePipe(t_fd *rfd, t_fd *wfd, int flags = 0) {
-	int[2] pipefd;
-	if (int ret = pipe2(&pipefd[0], flags)) {
-		throw new IoError(format("pipe2() -> %d.", ret));
-	}
-	*rfd = pipefd[0];
-	*wfd = pipefd[1];
 }
 
 char*[] toStringzA(string[] data) {
