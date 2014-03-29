@@ -371,7 +371,6 @@ public:
 	}
 	void _handleEvents() {
 		read(this.fdr.fd, this.buf.ptr, this.buf.length);
-		log(20, "DO2");
 
 		DList!td_io_callback cbs;
 		{
@@ -383,14 +382,12 @@ public:
 		foreach (cb; cbs) cb();
 	}
 	void add(td_io_callback cb) {
-		log(20, "DO0");
 		{
 			pthread_mutex_lock(&this.mut);
 			scope(exit) pthread_mutex_unlock(&this.mut);
 			this.cbs.insertBack(cb);
 		}
 		write(this.fdw, "\x00".ptr, 1);
-		log(20, "DO1");
 	}
 }
 
