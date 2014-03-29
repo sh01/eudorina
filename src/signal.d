@@ -36,7 +36,8 @@ class SignalCatcher {
 private:
 	pthread_mutex_t mut;
 	t_fd fd; // signal pipe FDs
-	DList!SignalInfo[] signals0, signals1, sx;
+	DList!SignalInfo[] _signals0, _signals1;
+	DList!SignalInfo[]* signals0, signals1, sx;
 	td_sig_cb[] handlers;
 public:
 	SyncRunner sr;
@@ -48,8 +49,11 @@ public:
 			throw new SignalError(format("pthread_mutex_init() -> errno == %d", errno));
 		};
 		this.sr = sr;
-		this.signals0.length = COUNT_SIGNALS;
-		this.signals1.length = COUNT_SIGNALS;
+
+		this.signals0 = &_signals0;
+		this.signals1 = &_signals1;
+		this._signals0.length = COUNT_SIGNALS;
+		this._signals1.length = COUNT_SIGNALS;
 		this.handlers.length = COUNT_SIGNALS;
 		// This should be a reasonable default: Catch everything we possibly can, except for abort which
 		// (will get through if raised from abort() in any case and) is not particularly useful to block or re-purpose.
@@ -106,7 +110,7 @@ public:
 		DList!SignalInfo l;
 		td_sig_cb h;
 		for (i = 0; i < COUNT_SIGNALS; i++) {
-			l = this.signals1[i];
+			l = (*this.signals1)[i];
 			if (l.empty()) continue;
 			h = this.handlers[i];
 			foreach (si; l) h(&si);
@@ -121,7 +125,7 @@ public:
 		}
 
 		for (i = 0; i < COUNT_SIGNALS; i++) {
-			l = this.signals1[i];
+			l = (*this.signals1)[i];
 			if (l.empty()) continue;
 			h = this.handlers[i];
 			foreach (si; l) h(&si);
@@ -137,7 +141,9 @@ public:
 		while (true) {
 			si = new SignalInfo();
 			rc = sigwaitinfo(cast(sigset_t*)&this.set, &si.i);
-			if (rc < 0) { // Can't happen. Probably.
+			if (rc < 0) {
+				if (errno == EINTR) continue;
+				// Can't happen. Probably.
 				abort();
 			}
 			pthread_mutex_lock(&this.mut);
@@ -146,8 +152,7 @@ public:
 				log(20, format("Got out-of-range signal %d.", si.i.si_signo));
 				abort();
 			}
-			auto s = this.signals0[si.i.si_signo];
-			this.signals0[si.i.si_signo].insertBack(si);
+			(*this.signals0)[si.i.si_signo].insertBack(si);
 
 			// // Potentially silly micro-optimization(?)s commented out for now.
 			// // This reads backwards, but is written this way for performance and should be correct.
