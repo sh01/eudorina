@@ -79,6 +79,14 @@ private {
 		(*val).length = l;
 		if (l > 0) (*val)[] = c[0..l];
 	}
+	void colr_string(sqlite3_stmt *s, int col, void *v) {
+		char []val;
+		auto c = cast(char*) sqlite3_column_blob(s, col);
+		int l = sqlite3_column_bytes(s, col);
+		val.length = l;
+		if (l > 0) val[] = c[0..l];
+		*(cast(string*)v) = assumeUnique(val);
+	}
 	immutable tf_colr[TypeInfo] columnrs;
 }
 
@@ -130,6 +138,7 @@ shared static this() {
 	cr[typeid(long*)] = &colr_int64;
 	//cr[typeid(sqlite3_value*)] = &colr_val;
 	cr[typeid(char[]*)] = &colr_blob;
+	cr[typeid(string*)] = &colr_string;
 	cr.rehash();
 	columnrs = assumeUnique(cr);
 }

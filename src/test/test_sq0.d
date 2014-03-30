@@ -28,7 +28,7 @@ int main(string[] args) {
 	auto s = runSql(c, "SELECT a,b FROM ta0;");
 	log(20, "Interrogating.");
 	long v0;
-	char[] v1;
+	string v1;
 	s.getRow(&v0, &v1);
 	log(20, format("Values: %d %s", v0, v1));
 	return 0;
