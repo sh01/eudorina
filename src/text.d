@@ -5,7 +5,7 @@ import std.exception;
 import std.string;
 import std.uni;
 
-string cescape(char[] s) @trusted {
+string cescape(const char[] s) @trusted {
 	char rv[];
 	size_t idx = 0;
 
