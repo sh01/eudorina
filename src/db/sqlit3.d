@@ -62,7 +62,8 @@ class SqliteConn {
 }
 
 private {
-	alias void function(sqlite3_stmt*, int, void*,) tf_colr;
+	// Column readers
+	alias void function(sqlite3_stmt*, int, void*) tf_colr;
 	void colr_int(sqlite3_stmt *s, int col, void *v){
 		*cast(int*)v = sqlite3_column_int(s, col);
 	}
@@ -88,6 +89,22 @@ private {
 		*(cast(string*)v) = assumeUnique(val);
 	}
 	immutable tf_colr[TypeInfo] columnrs;
+
+	// Value binders
+	alias int function(sqlite3_stmt*, int, const void*) tf_valb;
+	int valb_blob(sqlite3_stmt *s, int idx, const void *_v) {
+		auto v = cast(char[]*)_v;
+		return sqlite3_bind_blob(s, idx, cast(void*)v.ptr, cast(int)v.length, SQLITE_TRANSIENT);
+	}
+	int valb_int(sqlite3_stmt *s, int idx, const void *_v) {
+		auto v = cast(int*)_v;
+		return sqlite3_bind_int(s, idx, *v);
+	}
+	int valb_int64(sqlite3_stmt *s, int idx, const void *_v) {
+		auto v = cast(long*)_v;
+		return sqlite3_bind_int64(s, idx, *v);
+	}
+	immutable tf_valb[TypeInfo] valbs;
 }
 
 class SqliteStmt {
@@ -112,6 +129,14 @@ class SqliteStmt {
 		foreach (i, T; P) {
 			tf_colr cr = columnrs[typeid(T)];
 			cr(this.s, i, cast(void*)p[i]);
+		}
+	}
+	void bind(P...)(P p) {
+		foreach (i, T; P) {
+			tf_valb vb = valbs[typeid(T)];
+			auto rc = vb(this.s, i+1, cast(void*)p[i]);
+			if (rc == SQLITE_OK) continue;
+			throw new Sqlite3Error(format("sqlite3_bind_*() failed: %d; %s", rc, getSqliteErrmsg(this.c.db)));
 		}
 	}
 	string[] columnNames() {
@@ -141,4 +166,16 @@ shared static this() {
 	cr[typeid(string*)] = &colr_string;
 	cr.rehash();
 	columnrs = assumeUnique(cr);
+
+	tf_valb[TypeInfo] vb;
+	vb[typeid(char[]*)] = &valb_blob;
+	vb[typeid(const(char)[]*)] = &valb_blob;
+	vb[typeid(immutable(char)[]*)] = &valb_blob;
+	vb[typeid(int*)] = &valb_int;
+	vb[typeid(const(int)*)] = &valb_int;
+	vb[typeid(immutable(int)*)] = &valb_int;
+	vb[typeid(long*)] = &valb_int64;
+	vb[typeid(const(long)*)] = &valb_int64;
+	vb[typeid(immutable(long)*)] = &valb_int64;
+	valbs = assumeUnique(vb);
 }
