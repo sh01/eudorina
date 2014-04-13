@@ -36,7 +36,7 @@ class SqliteConn {
 
 		if (sqlite3_open_v2(fn_c, &db, flags, null) != SQLITE_OK) {
 			string err = (db != null) ? getSqliteErrmsg(db) : "?OOM?";
-			throw new Sqlite3Error(format("sqlite3_open_v2() failed: '%s'", cescape(err)));
+			throw new Sqlite3Error(format("sqlite3_open_v2() failed: %s", cescape(err)));
 		};
 	}
 
