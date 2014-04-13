@@ -69,6 +69,9 @@ class SqliteStmt {
 		this.c = c;
 		this.s = stmt;
 	}
+	void reset() {
+		sqlite3_reset(this.s);
+	}
 	bool step() {
 		auto rc = sqlite3_step(this.s);
 		switch (rc) {
