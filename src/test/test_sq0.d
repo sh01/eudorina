@@ -10,12 +10,12 @@ pragma(lib, "sqlite3");
 alias void delegate(SqliteStmt s) td_bind;
 
 auto runSql(SqliteConn c, string s, td_bind b) {
-	log(20, format("Preparing statement: %s", cescape(s)));
+	logf(20, "Preparing statement: %s", cescape(s));
 	auto st = c.prepare(s);
-	log(20, format("Binding variables."));
+	log(20, "Binding variables.");
 	b(st);
-	log(20, format("Evaluating: %s", st.step()));
-	log(20, format(" Columns: %s", st.columnNames()));
+	logf(20, "Evaluating: %s", st.step());
+	logf(20, " Columns: %s", st.columnNames());
 	return st;
 }
 
@@ -42,6 +42,6 @@ int main(string[] args) {
 	char[] v1;
 	string v2;
 	s.getRow(&v0, &v1, &v2);
-	log(20, format("Values: %d %s %s", v0, v1, v2));
+	logf(20, "Values: %d %s %s", v0, v1, v2);
 	return 0;
 }
