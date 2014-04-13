@@ -61,36 +61,6 @@ class SqliteConn {
 	}
 }
 
-private {
-	// Column readers
-	alias void function(sqlite3_stmt*, int, void*) tf_colr;
-	void colr_int(sqlite3_stmt *s, int col, void *v){
-		*cast(int*)v = sqlite3_column_int(s, col);
-	}
-	void colr_int64(sqlite3_stmt *s, int col, void *v){
-		*cast(long*)v = sqlite3_column_int64(s, col);
-	}
-	// void colr_val(sqlite3_stmt *s, int col, void *v) {
-	// 	*cast(sqlite3_value**)v = sqlite3_column_value(s, col);
-	// }
-	void colr_blob(sqlite3_stmt *s, int col, void *v) {
-		auto val = cast(char[]*)v;
-	    auto c = cast(char*) sqlite3_column_blob(s, col);
-		int l = sqlite3_column_bytes(s, col);
-		(*val).length = l;
-		if (l > 0) (*val)[] = c[0..l];
-	}
-	void colr_string(sqlite3_stmt *s, int col, void *v) {
-		char []val;
-		auto c = cast(char*) sqlite3_column_blob(s, col);
-		int l = sqlite3_column_bytes(s, col);
-		val.length = l;
-		if (l > 0) val[] = c[0..l];
-		*(cast(string*)v) = assumeUnique(val);
-	}
-	immutable tf_colr[TypeInfo] columnrs;
-}
-
 class SqliteStmt {
 	SqliteConn c;
 	sqlite3_stmt *s;
@@ -109,10 +79,32 @@ class SqliteStmt {
 			  throw new Sqlite3Error(format("sqlite3_step() failed: %d; %s", rc, getSqliteErrmsg(this.c.db)));
 		}
 	}
+	void getColumn(int col, int *v) {
+		*v = sqlite3_column_int(this.s, col);
+	}
+	void getColumn(int col, long *v) {
+		*v = sqlite3_column_int64(this.s, col);
+	}
+	void getColumn(int col, char[] *v) {
+		auto c = cast(char*) sqlite3_column_blob(s, col);
+		int l = sqlite3_column_bytes(s, col);
+		v.length = l;
+		if (l > 0) (*v)[] = c[0..l];
+	}
+	void getColumn(int col, const(char)[] *v) {
+		char []buf;
+		auto c = cast(char*) sqlite3_column_blob(s, col);
+		int l = sqlite3_column_bytes(s, col);
+		buf.length = l;
+		if (l > 0) buf[] = c[0..l];
+		*v = assumeUnique(buf);
+	}
+	void getColumn(int col, immutable(char)[] *v) {
+		this.getColumn(col, cast(const(char)[]*)v);
+	}
 	void getRow(P...)(P p) {
 		foreach (i, T; P) {
-			tf_colr cr = columnrs[typeid(T)];
-			cr(this.s, i, cast(void*)p[i]);
+			this.getColumn(i, p[i]);
 		}
 	}
 private:
@@ -151,15 +143,4 @@ public:
 	~this() {
 		sqlite3_finalize(this.s);
 	}
-}
-
-shared static this() {
-    tf_colr[TypeInfo] cr;
-	cr[typeid(int*)] = &colr_int;
-	cr[typeid(long*)] = &colr_int64;
-	//cr[typeid(sqlite3_value*)] = &colr_val;
-	cr[typeid(char[]*)] = &colr_blob;
-	cr[typeid(string*)] = &colr_string;
-	cr.rehash();
-	columnrs = assumeUnique(cr);
 }
