@@ -24,9 +24,8 @@ int main(string[] args) {
 
 	void d_noop(SqliteStmt s) { }
 	void d_b0(SqliteStmt st) {
-		int i = 42;
 		string s = "f\"';oo";
-		st.bind(&i, &s);
+		st.bind(42, s);
 	}
 
 	log(20, "Init.");

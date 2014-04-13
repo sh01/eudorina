@@ -89,22 +89,6 @@ private {
 		*(cast(string*)v) = assumeUnique(val);
 	}
 	immutable tf_colr[TypeInfo] columnrs;
-
-	// Value binders
-	alias int function(sqlite3_stmt*, int, const void*) tf_valb;
-	int valb_blob(sqlite3_stmt *s, int idx, const void *_v) {
-		auto v = cast(char[]*)_v;
-		return sqlite3_bind_blob(s, idx, cast(void*)v.ptr, cast(int)v.length, SQLITE_TRANSIENT);
-	}
-	int valb_int(sqlite3_stmt *s, int idx, const void *_v) {
-		auto v = cast(int*)_v;
-		return sqlite3_bind_int(s, idx, *v);
-	}
-	int valb_int64(sqlite3_stmt *s, int idx, const void *_v) {
-		auto v = cast(long*)_v;
-		return sqlite3_bind_int64(s, idx, *v);
-	}
-	immutable tf_valb[TypeInfo] valbs;
 }
 
 class SqliteStmt {
@@ -131,12 +115,24 @@ class SqliteStmt {
 			cr(this.s, i, cast(void*)p[i]);
 		}
 	}
+private:
+	int _bindOne(int idx, const(char)[] v) {
+		return sqlite3_bind_blob(this.s, idx, cast(void*)v.ptr, cast(int)v.length, SQLITE_TRANSIENT);
+	}
+	int _bindOne(int idx, int v) {
+		return sqlite3_bind_int(this.s, idx, v);
+	}
+	int _bindOne(int idx, long v) {
+		return sqlite3_bind_int64(this.s, idx, v);
+	}
+public:
+	void bindOne(T)(int i, T t) {
+		auto rc = this._bindOne(i, t);
+		if (rc != SQLITE_OK) throw new Sqlite3Error(format("sqlite3_bind_*(%d...) failed: %d; %s", i, rc, getSqliteErrmsg(this.c.db)));
+	}
 	void bind(P...)(P p) {
 		foreach (i, T; P) {
-			tf_valb vb = valbs[typeid(T)];
-			auto rc = vb(this.s, i+1, cast(void*)p[i]);
-			if (rc == SQLITE_OK) continue;
-			throw new Sqlite3Error(format("sqlite3_bind_*() failed: %d; %s", rc, getSqliteErrmsg(this.c.db)));
+			this.bindOne(cast(int)i+1, p[i]);
 		}
 	}
 	string[] columnNames() {
@@ -166,16 +162,4 @@ shared static this() {
 	cr[typeid(string*)] = &colr_string;
 	cr.rehash();
 	columnrs = assumeUnique(cr);
-
-	tf_valb[TypeInfo] vb;
-	vb[typeid(char[]*)] = &valb_blob;
-	vb[typeid(const(char)[]*)] = &valb_blob;
-	vb[typeid(immutable(char)[]*)] = &valb_blob;
-	vb[typeid(int*)] = &valb_int;
-	vb[typeid(const(int)*)] = &valb_int;
-	vb[typeid(immutable(int)*)] = &valb_int;
-	vb[typeid(long*)] = &valb_int64;
-	vb[typeid(const(long)*)] = &valb_int64;
-	vb[typeid(immutable(long)*)] = &valb_int64;
-	valbs = assumeUnique(vb);
 }
