@@ -97,10 +97,10 @@ class TextFDWriter : LogWriter {
 		// To reduce the number of syscalls for a log message, instead of using those members we convert it to a TM here and rip its fractional seconds out separetly.
 		// auto st = new SysTime(e.ts, *this.tz); -- doesn't work. Why?
 		auto st = new SysTime(e.ts);
-		auto tm = st.toTM();
+		auto dt = cast(DateTime)*st;
 		auto hnusec = (st.stdTime()/1000) % 10000;
 		return format("%04d-%02d-%02d_%02d:%02d:%02d.%04d %02d [%s:%s] %s\n",
-		  tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, hnusec,
+		  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, hnusec,
 		  e.severity, e.file, e.line, e.msg);
 	}
 
