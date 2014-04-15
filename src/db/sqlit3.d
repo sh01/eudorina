@@ -88,6 +88,9 @@ class SqliteStmt {
 	void getColumn(int col, long *v) {
 		*v = sqlite3_column_int64(this.s, col);
 	}
+	void getColumn(int col, double *v) {
+		*v = sqlite3_column_double(this.s, col);
+	}
 	void getColumn(int col, char[] *v) {
 		auto c = cast(char*) sqlite3_column_blob(s, col);
 		int l = sqlite3_column_bytes(s, col);
@@ -120,6 +123,10 @@ private:
 	int _bindOne(int idx, long v) {
 		return sqlite3_bind_int64(this.s, idx, v);
 	}
+	int _bindOne(int idx, double v) {
+		return sqlite3_bind_double(this.s, idx, v);
+	}
+
 public:
 	void bindOne(T)(int i, T t) {
 		auto rc = this._bindOne(i, t);
