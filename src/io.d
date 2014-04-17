@@ -5,6 +5,8 @@ import core.sys.posix.unistd; // close(), etc.
 import core.sys.posix.fcntl;  // O_NONBLOCK
 import core.sys.posix.pthread;
 import core.sys.posix.stdlib; // pty stuff: posix_openpt, ptsname(), etc.
+import core.sys.posix.sys.wait;
+public import core.sys.posix.sys.wait: WNOHANG, WUNTRACED;
 import core.time;
 
 version (linux) {
@@ -21,6 +23,7 @@ import core.sys.linux.epoll;  // epoll stuff; need to compile with '-fversion=Li
 import std.array;
 import std.container;
 import std.c.process;
+static import std.c.stdlib;
 static import std.process;
 import std.stdint;
 import std.string;
@@ -477,6 +480,13 @@ public:
 		}
 	}
 
+	int waitPid(int *out_ = null, int options = 0) {
+		return core.sys.posix.sys.wait.waitpid(this.pid, out_, options);
+	}
+	void kill(int signal=15) {
+		core.sys.posix.signal.kill(this.pid, signal);
+	}
+
 	void Spawn(string[]argv, const char **env = environ) {
 		this.checkUnspawned();
 
@@ -541,7 +551,9 @@ public:
 			}
 
 			auto c_argv = toStringzA(argv);
-			execvpe(c_argv[0], c_argv.ptr, env);
+			int rc = execvpe(c_argv[0], c_argv.ptr, env);
+			perror("execvpe");
+			std.c.stdlib.exit(100);
 		}
 		// Parent.
 		this.pid = pid;
