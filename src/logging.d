@@ -62,8 +62,8 @@ class Logger {
 		auto le = new LogEntry(severity, msg, ts, file, line);
 		this.log(le);
 	}
-	void logf(Severity, string, Args...)(int severity, string fmt, Args args) {
-		auto le = new LogEntry(severity, format(fmt, args));
+	void logf(string file=__FILE__, size_t line=__LINE__, Severity, string, Args...)(int severity, string fmt, Args args) {
+		auto le = new LogEntry(severity, format(fmt, args), TS_UNKNOWN, file, line);
 		this.log(le);
 	}
 }
@@ -73,8 +73,8 @@ __gshared Logger stdLogger;
 void log(Severity severity, string msg, long ts = TS_UNKNOWN, string file = __FILE__, size_t line = __LINE__) @trusted {
 	stdLogger.log(severity, msg, ts, file, line);
 }
-void logf(Severity, string, Args...) (Severity severity, string fmt, Args args) {
-	stdLogger.logf!(Severity, string, Args)(severity, fmt, args);
+void logf(string file=__FILE__, size_t line=__LINE__, Severity, string, Args...) (Severity severity, string fmt, Args args) {
+	stdLogger.logf!(file, line, Severity, string, Args)(severity, fmt, args);
 }
 
 class TextFDWriter : LogWriter {
@@ -111,7 +111,7 @@ class TextFDWriter : LogWriter {
 	}
 }
 
-void SetupLogging(Severity min_s = 10, int fd = 2) {
+void SetupLogging (Severity min_s = 10, int fd = 2) {
 	stdLogger.add_writer(new TextFDWriter(min_s, fd));
 }
 
