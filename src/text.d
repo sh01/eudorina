@@ -12,11 +12,8 @@ string cescape(const char[] s) @trusted {
 	rv ~= "\"";
 
 	void add_esc(dchar c) {
-		if (c <= 0x7F) {
-			rv ~= format("\\x%02x", c);
-			return;
-		}
-		rv ~= format("\\u%04x", c);
+		rv ~= format("\\x%02x", c);
+		return;
 	}
 
 	foreach (c; s) {
@@ -34,7 +31,7 @@ string cescape(const char[] s) @trusted {
 		      rv ~= "\"";
 		      break;
 		  default:
-			  if (isGraphical(c) && !isWhite(c)) {
+			  if (isGraphical(c) && !isWhite(c) && c < 128) {
 				  rv ~= c;
 			  } else {
 				  add_esc(c);
