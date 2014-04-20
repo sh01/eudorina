@@ -27,7 +27,7 @@ for sdir in db; do
 done
 
 pushd build
-for bn in text logging io signal service_aggregation db/sqlit3; do
+for bn in text logging io signal service_aggregation structured_text db/sqlit3; do
 	DN=$(dirname $bn)
 	FN=$(basename $bn)
 	ofn=${FN}.o
@@ -48,4 +48,9 @@ done
 for bn in test_sq0; do
 	CMD0="$CC -g $OUT build/bin/${bn} -Ibuild/include/ $L-Lbuild/lib/ $L-Lbuild/lib/eudorina $L-Lbuild/lib/eudorina/db ${VER}=Linux src/test/${bn}.d $L-lsqlit3 $L-lsqlite3 $L-llogging $L-lservice_aggregation $L-lsignal $L-lio $L-ltext"
 	echo $CMD0; $CMD0
+done
+
+for bn in test_sta; do
+	CMD0="$CC -g $OUT build/bin/${bn} -Ibuild/include/ $L-Lbuild/lib/ $L-Lbuild/lib/eudorina ${VER}=Linux src/test/${bn}.d $L-llogging $L-ltext $L-lstructured_text"
+	echo $CMD0; $CMD0;
 done
