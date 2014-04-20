@@ -59,21 +59,36 @@ private class ANSICell {
 	}
 }
 
+private class PlainCell: ANSICell {
+	this(A...)(A a) { super (a); }
+	override ANSICell fmt(TextFormat fmt) { return this; }
+}
+
 private class ANSILine {
 	int colspan;
 	ANSICell[] cells;
 	this() { }
-	ANSICell add(int colspan = 1) {
-		auto rv = new ANSICell(colspan);
+	ANSICell add(CT, A...)(A a) {
+		auto rv = new CT(a);
 		this.cells ~= rv;
 		return rv;
+	}
+	ANSICell add(int colspan = 1) {
+		return this.add!ANSICell(colspan);
+	}
+}
+
+private class PlainLine: ANSILine {
+	override ANSICell add(int colspan = 1) {
+		return ANSILine.add!(PlainCell)(colspan);
 	}
 }
 
 class ANSITable {
 	ANSILine[] lines;
+	protected ANSILine _newLine() { return new ANSILine(); }
 	ANSILine add() {
-		ANSILine rv = new ANSILine();
+		ANSILine rv = _newLine;
 		this.lines ~= rv;
 		return rv;
 	}
@@ -115,6 +130,10 @@ class ANSITable {
 	string getStr(string prefix = "", string infix = " ", string suffix = "\n") {
 		return join(this.getLines(prefix, infix, suffix));
 	}
+}
+
+class PlainTable: ANSITable {
+	override protected ANSILine _newLine() { return new PlainLine(); }
 }
 
 //---------------------------------------------------------------- Color defs
