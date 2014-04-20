@@ -46,25 +46,29 @@ private class ANSICell {
 		if (width == cast(size_t)-1) width = text.length;
 		return this.add(to!string(text), width);
 	}
-	ANSICell fmt(TextFormat fmt) {
+	ANSICell addf(A...)(string fmt, A a) {
+		string text = format(fmt, a);
+		return this.add(text);
+	}
+	ANSICell setFmt(TextFormat fmt) {
 		this.text ~= fmt.asANSI();
 		return this; // convenience: allow chaning
 	}
-	ANSICell fmt(A...)(A args) {
+	ANSICell setFmt(A...)(A args) {
 		auto fmt = new TextFormat(args);
-		return this.fmt(fmt);
+		return this.setFmt(fmt);
 	}
-	ANSICell fmtReset() {
-		return this.fmt(null,null,false,true);
+	ANSICell resetFmt() {
+		return this.setFmt(null,null,false,true);
 	}
 }
 
 private class PlainCell: ANSICell {
 	this(A...)(A a) { super (a); }
-	override ANSICell fmt(TextFormat fmt) { return this; }
+	override ANSICell setFmt(TextFormat fmt) { return this; }
 }
 
-private class ANSILine {
+class ANSILine {
 	int colspan;
 	ANSICell[] cells;
 	this() { }
@@ -84,6 +88,7 @@ private class PlainLine: ANSILine {
 	}
 }
 
+import std.stdio;
 class ANSITable {
 	ANSILine[] lines;
 	protected ANSILine _newLine() { return new ANSILine(); }
@@ -101,7 +106,7 @@ class ANSITable {
 		foreach (l; this.lines) {
 			idx = 0;
 			foreach(c; l.cells) {
-				if (widths.length <= idx) widths.length = idx+c.colspan+1;
+				if (widths.length <= idx+c.colspan) widths.length = idx+c.colspan+1;
 				if ((c.colspan == 1) && (widths[idx] < c.width)) widths[idx] = c.width; // colspan widths are hard; ignoring this issue for now.
 				idx += c.colspan;
 			}
