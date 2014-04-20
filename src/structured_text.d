@@ -100,7 +100,7 @@ class ANSITable {
 	void add(ANSILine l) {
 		this.lines ~= l;
 	}
-	string[] getLines(string prefix = "", string infix = " ", string suffix = "") {
+	string[] getLines(size_t start = 0, string prefix = "", string infix = " ", string suffix = "") {
 		size_t[] widths;
 		int idx;
 		foreach (l; this.lines) {
@@ -114,7 +114,7 @@ class ANSITable {
 		Appender!(string[]) table_text;
 		Appender!(string[]) line_text;
 		size_t w = 0;
-		foreach (l; this.lines) {
+		foreach (l; this.lines[start..$]) {
 			idx = 0;
 			line_text = appender(cast(string[])[]);
 			foreach(c; l.cells) {
@@ -132,8 +132,8 @@ class ANSITable {
 		}
 		return table_text.data;
 	}
-	string getStr(string prefix = "", string infix = " ", string suffix = "\n") {
-		return join(this.getLines(prefix, infix, suffix));
+	string getStr(size_t start = 0, string prefix = "", string infix = " ", string suffix = "\n") {
+		return join(this.getLines(start, prefix, infix, suffix));
 	}
 }
 
