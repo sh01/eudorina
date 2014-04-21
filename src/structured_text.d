@@ -116,7 +116,7 @@ class ANSITable {
 		size_t w = 0;
 		foreach (l; this.lines[start..$]) {
 			idx = 0;
-			line_text = appender(cast(string[])[]);
+			line_text = appender([prefix]);
 			foreach(c; l.cells) {
 				w = 0;
 				int end = idx + c.colspan;
@@ -126,9 +126,8 @@ class ANSITable {
 				line_text ~= infix;
 			}
 			line_text.shrinkTo(line_text.data.length-1); // Drop trailing infix
-			table_text ~= prefix;
-			table_text ~= line_text.data;
-			table_text ~= suffix;
+			line_text ~= suffix;
+			table_text ~= join(line_text.data);
 		}
 		return table_text.data;
 	}
