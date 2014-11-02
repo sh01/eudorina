@@ -567,19 +567,11 @@ public:
 		if ((this.fd_i != -1) || (this.fd_o != -1)) {
 			throw new IoError("Target FDs are not free.");
 		}
-		t_fd fd_master = posix_openpt(O_RDWR|flags);
-		checkErr(fd_master < 0, "PTY master open failed: %d");
+
+		t_fd fd_master, fd_slave;
+		makePty(&fd_master, &fd_slave, flags);
 		scope (failure) {
 			close(fd_master);
-		}
-		checkErr(grantpt(fd_master) != 0, "grantpt() failed: %d");
-		checkErr(unlockpt(fd_master) != 0, "unlockpt() failed:%d");
-		// Not threadsafe. I think we'll live.
-		char *slave_fn = ptsname(fd_master);
-		checkErr(slave_fn == null, "ptsname() failed: %d");
-		t_fd fd_slave = open(slave_fn, O_RDWR);
-		checkErr(fd_slave < 0, "PTY slave open failed: %d");
-		scope (failure) {
 			close(fd_slave);
 		}
 		this.fd_i = fd_slave;
@@ -587,4 +579,20 @@ public:
 		this.fds_close ~= fd_slave;
 		return fd_master;
 	}
+	//t_fd setupPtyErr(int flags = O_NOCTTY)
+}
+
+void makePty(t_fd *master, t_fd *slave, int flags) {
+	*master = posix_openpt(O_RDWR|flags);
+	checkErr(*master < 0, "PTY master open failed: %d");
+	scope (failure) {
+		close(*master);
+	}
+	checkErr(grantpt(*master) != 0, "grantpt() failed: %d");
+	checkErr(unlockpt(*master) != 0, "unlockpt() failed:%d");
+	// Not threadsafe. I think we'll live.
+	char *slave_fn = ptsname(*master);
+	checkErr(slave_fn == null, "ptsname() failed: %d");
+	*slave = open(slave_fn, O_RDWR);
+	checkErr(*slave < 0, "PTY slave open failed: %d");	
 }
