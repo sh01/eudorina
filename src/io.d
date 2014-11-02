@@ -467,6 +467,12 @@ private void checkErr(bool err, string msg,) {
 	throw new IoError(format(msg, errno));
 }
 
+enum StdFd {
+	IN = 1,
+	OUT = 2,
+	ERR = 4
+};
+
 class SubProcess {
 public:
 	t_pid pid = -1;
@@ -559,13 +565,24 @@ public:
 		this.pid = pid;
 	}
 
+	t_fd*[] getFds(int fdmask) @safe {
+		t_fd*[] rv;
+		if (fdmask & StdFd.IN) rv ~= &this.fd_i;
+		if (fdmask & StdFd.OUT) rv ~= &this.fd_o;
+		if (fdmask & StdFd.ERR) rv ~= &this.fd_e;
+		return rv;
+	}
+
 	// Create a new master/slave pty pair, setting the slave side up for the subprocess's stdout and stdin.
 	//  Returns the fd for the (new) master side on success.
 	//  Else throws IoError.
-	t_fd setupPty(int flags = O_NOCTTY) {
+	t_fd setupPty(int fdmask, int flags = O_NOCTTY) {
 		this.checkUnspawned();
-		if ((this.fd_i != -1) || (this.fd_o != -1)) {
-			throw new IoError("Target FDs are not free.");
+		auto fds = this.getFds(fdmask);
+		if (fds.length == 0) throw new IoError("No-op.");
+
+		foreach (fd; fds) {
+			if (*fd != -1) throw new IoError("Target FDs are not free.");
 		}
 
 		t_fd fd_master, fd_slave;
@@ -574,12 +591,12 @@ public:
 			close(fd_master);
 			close(fd_slave);
 		}
-		this.fd_i = fd_slave;
-		this.fd_o = fd_slave;
+		foreach (fd; fds) {
+			*fd = fd_slave;
+		}
 		this.fds_close ~= fd_slave;
 		return fd_master;
 	}
-	//t_fd setupPtyErr(int flags = O_NOCTTY)
 }
 
 void makePty(t_fd *master, t_fd *slave, int flags) {
