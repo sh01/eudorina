@@ -397,7 +397,7 @@ public:
 
 class BufferWriter {
 private:
-	auto bufs = DList!(char[])();
+	auto bufs = DList!(const(char)[])();
 public:
 	FD fd;
 	this(FD fd) {
@@ -440,7 +440,7 @@ public:
 		}
 	}
 
-	void write(char[] buf) {
+	void write(const(char)[] buf) {
 		bool was_empty = this.bufs.empty();
 		this.bufs.insertBack(buf);
 		if (was_empty) {
